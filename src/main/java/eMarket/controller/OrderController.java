@@ -66,6 +66,7 @@ public class OrderController
     Model model)
     {
     	EMarketApp.getStore().getOrderList().remove(getOrder(orderId));
+    	model.addAttribute("orderList", EMarketApp.getStore().getOrderList());
     	
     	return "form/orderMaster";
     }
