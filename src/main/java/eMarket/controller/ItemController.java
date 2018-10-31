@@ -7,6 +7,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
@@ -21,36 +22,34 @@ import eMarket.domain.Product;
 @RequestMapping("/item")
 public class ItemController
 {
-	public static OrderItem getItem(List<OrderItem> itemList, int id)
-	{
-		for(OrderItem i : itemList)
-		{
-			if(i.getId() == id) return i;
-		}
-		return null;
-	}
-	
+	//adding/editing page for order items
 	@RequestMapping(value = "/detail", method = RequestMethod.GET)
     public String orderAdd(@RequestParam(value="orderId", required=true) int orderId,
     @RequestParam(value="itemId", required=false, defaultValue="-1") int itemId,
     Model model)
     {
 		ItemFormDto itemFormDto = new ItemFormDto();
+		//This is a new item for this order
+		//give it IDs and leave it blank
     	if(itemId < 0)
     	{
     		itemFormDto.setId(OrderItem.lastId);
     		itemFormDto.setOrderId(orderId);
     	}
+    	//This is an edited item for this order
     	else
     	{
+    		//start by setting id
     		itemFormDto.setId(itemId);
-    		OrderItem thisItem = getItem(OrderController.getOrder(orderId).getItemList(), orderId);
     		
+    		//find this order and item
+    		List<OrderItem> ordersItemList = OrderController.getOrder(orderId).getItemList();
+    		OrderItem thisItem = ItemController.getItem(ordersItemList, orderId);
+    		
+    		//populate dto with existing data to be displayed/edited
     		itemFormDto.setOrderId(orderId);
     		itemFormDto.setAmount(thisItem.getAmount());
     		itemFormDto.setProductId(thisItem.getProduct().getId());
-    		itemFormDto.setProductList(EMarketApp.getStore().getProductList());
-    		System.out.println(itemFormDto.getOrderId());
     	}
     	
     	itemFormDto.setProductList(EMarketApp.getStore().getProductList());
@@ -60,16 +59,19 @@ public class ItemController
     	return "form/itemDetail";
     }
 	
-	public static boolean hasId(List<OrderItem> items, int id)
+	//Not being able to alter the other classes is quite annoying. Makes a need for these kind of functions
+	
+	//returns the OrderItem with given id in the given list. Or null if it doesn't exist
+	public static OrderItem getItem(List<OrderItem> itemList, int id)
 	{
-		for(OrderItem o : items)
+		for(OrderItem i : itemList)
 		{
-			if(o.getId() == id) return true;
+			if(i.getId() == id) return i;
 		}
-		
-		return false;
+		return null;
 	}
 	
+	//returns the Product with given id in the given list. Or null if it doesn't exist
 	public static Product getProduct(List<Product> products, int id)
 	{
 		for(Product p : products)
@@ -82,17 +84,25 @@ public class ItemController
 	
 	@RequestMapping(value = "/add", method = RequestMethod.POST)
 	public String itemAdd(@ModelAttribute(value="itemFormDto")ItemFormDto itemFormDto,
+			BindingResult bindingResult,
 			@RequestParam String action,
 			Model model)
 	{
+		//chose submit, not cancel
 		if(action.equals("Submit"))
 		{
+			//only care about validating if they chose submit. Valid input doesn't matter if they're cancelling anyway
+			if(bindingResult.hasErrors())
+			{
+				//CHANGEME?
+				itemFormDto.setProductList(EMarketApp.getStore().getProductList());
+				model.addAttribute("itemFormDto", itemFormDto);
+				return "form/itemDetail";
+			}
 			//if the order item already existed, it's been edited, so just delete it and recreate it
-			System.out.println("thisOrderId: " + itemFormDto.getOrderId());
 			Order thisOrder = OrderController.getOrder(itemFormDto.getOrderId());
-			System.out.println("thisOrder: " + thisOrder);
 			OrderItem thisItem = ItemController.getItem(thisOrder.getItemList(), itemFormDto.getId());
-			thisOrder.getItemList().remove(thisItem);
+			if(thisItem != null) thisOrder.getItemList().remove(thisItem);
 			
 			//this is a new item for this order
 			OrderItem newItem = new OrderItem();
@@ -103,12 +113,11 @@ public class ItemController
 			
 			OrderController.getOrder(itemFormDto.getOrderId()).getItemList().add(newItem);
 			OrderController.getOrder(itemFormDto.getOrderId()).updateCost();
-
 		}
-		if(action.equals("Cancel"))
+		/*if(action.equals("Cancel"))
 		{
 			System.out.println("Cancelled");
-		}
+		}*/
 		
 		return "redirect:/order/add?orderId=" + itemFormDto.getOrderId();
 	}
