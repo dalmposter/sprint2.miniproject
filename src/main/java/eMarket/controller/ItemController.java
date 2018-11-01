@@ -5,15 +5,19 @@ package eMarket.controller;
 
 import java.util.List;
 
+import javax.swing.JOptionPane;
+
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
+import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import eMarket.EMarketApp;
+import eMarket.domain.Deal;
 import eMarket.domain.Order;
 import eMarket.domain.OrderItem;
 import eMarket.domain.Product;
@@ -82,6 +86,46 @@ public class ItemController
 		return null;
 	}
 	
+	//function to return whether a deal is available for an item. If it is, set that items discount accordingly
+	//searches for the best deal if multiple exist
+	public boolean checkDiscount(OrderItem item, Order order)
+	{
+		List<Deal> dealList = EMarketApp.getStore().getDealList();
+		//if multiple deals are on, apply the best
+		double currBest = 0;
+		for(Deal deal : dealList)
+		{
+			boolean endsAfter = false;
+			//deal ends after or when this order was created or has no end date
+			if(deal.getEndDate() == null) endsAfter = true;
+			else if(order.getDate().isBefore(deal.getEndDate()) || order.getDate().isEqual(deal.getEndDate())) endsAfter = true;
+			
+			if(endsAfter)
+			{
+				//deal began before or when this order was created
+				if(deal.getStartDate().isBefore(order.getDate()) || deal.getStartDate().isEqual(order.getDate()))
+				{
+					//deal is for the correct product
+					if(deal.getProduct().getId() == item.getProduct().getId())
+					{
+						//set the items discount and return true
+						if(deal.getDiscount() > currBest) currBest = deal.getDiscount();
+					}
+				}
+			}
+		}
+		
+		//if a deal was found, add it to the item and return true
+		if(currBest > 0)
+		{
+			item.setDiscount(currBest);
+			return true;
+		}
+		
+		//no deal for this order item
+		return false;
+	}
+	
 	@RequestMapping(value = "/add", method = RequestMethod.POST)
 	public String itemAdd(@ModelAttribute(value="itemFormDto")ItemFormDto itemFormDto,
 			BindingResult bindingResult,
@@ -92,24 +136,41 @@ public class ItemController
 		if(action.equals("Submit"))
 		{
 			//only care about validating if they chose submit. Valid input doesn't matter if they're cancelling anyway
-			if(bindingResult.hasErrors())
+			//either amount is non numerical or none is selected from product list
+			if(bindingResult.hasErrors() || itemFormDto.getProductId() < 0)
 			{
+				//sometimes selecting none from the product drop down sets the id to 0 (bananas)
+				//don't know that there's much I can do about it from these 3 classes
 				//CHANGEME?
 				itemFormDto.setProductList(EMarketApp.getStore().getProductList());
 				model.addAttribute("itemFormDto", itemFormDto);
 				return "form/itemDetail";
 			}
+			
 			//if the order item already existed, it's been edited, so just delete it and recreate it
 			Order thisOrder = OrderController.getOrder(itemFormDto.getOrderId());
 			OrderItem thisItem = ItemController.getItem(thisOrder.getItemList(), itemFormDto.getId());
 			if(thisItem != null) thisOrder.getItemList().remove(thisItem);
 			
-			//this is a new item for this order
+			//add a new item to the order
 			OrderItem newItem = new OrderItem();
 			newItem.setAmount(itemFormDto.getAmount());
 			newItem.setId(itemFormDto.getId());
 			newItem.setProduct(ItemController.getProduct(EMarketApp.getStore().getProductList(), itemFormDto.getProductId()));
-			newItem.setCost(newItem.getProduct().getPrice() * newItem.getAmount());
+			
+			if(checkDiscount(newItem, thisOrder))
+			{
+				newItem.setCost((newItem.getProduct().getPrice() * (1 - newItem.getDiscount())) * newItem.getAmount());
+			}
+			else
+			{
+				newItem.setCost(newItem.getProduct().getPrice() * newItem.getAmount());
+			}
+			
+			//was getting a weird problem where the cost was off by tiny fractions. Presumably some internal problem with binary to decimal
+			//just round it to 2 decimal places to fix it
+			newItem.setCost(Math.round(newItem.getCost() * 100));
+			newItem.setCost(newItem.getCost() / 100);
 			
 			OrderController.getOrder(itemFormDto.getOrderId()).getItemList().add(newItem);
 			OrderController.getOrder(itemFormDto.getOrderId()).updateCost();
@@ -120,5 +181,23 @@ public class ItemController
 		}*/
 		
 		return "redirect:/order/add?orderId=" + itemFormDto.getOrderId();
+	}
+	
+	//delete item
+	@RequestMapping(value = "/delete", method = RequestMethod.GET)
+	public String deleteItem(@RequestParam(value="itemId", required=true) int itemId,
+			@RequestParam(value="orderId", required=true) int orderId,
+			Model model)
+	{
+		Order thisOrder = OrderController.getOrder(orderId);
+		
+		if(thisOrder != null)
+		{
+			thisOrder.getItemList().remove(ItemController.getItem(thisOrder.getItemList(), itemId));
+			thisOrder.updateCost();
+		}
+		
+		//return to overview of order
+		return "redirect:/order/add?orderId=" + orderId;
 	}
 }
