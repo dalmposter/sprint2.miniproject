@@ -6,11 +6,14 @@ package eMarket.controller;
 import java.util.List;
 
 import javax.swing.JOptionPane;
+import javax.validation.Valid;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.ObjectError;
+import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.InitBinder;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
@@ -26,6 +29,11 @@ import eMarket.domain.Product;
 @RequestMapping("/item")
 public class ItemController
 {
+	@InitBinder
+    protected void initBinder(WebDataBinder binder) {
+    		binder.addValidators(new ItemValidator());
+    }
+	
 	//adding/editing page for order items
 	@RequestMapping(value = "/detail", method = RequestMethod.GET)
     public String orderAdd(@RequestParam(value="orderId", required=true) int orderId,
@@ -91,11 +99,10 @@ public class ItemController
 	public boolean checkDiscount(OrderItem item, Order order)
 	{
 		List<Deal> dealList = EMarketApp.getStore().getDealList();
-		//if multiple deals are on, apply the best
-		double currBest = 0;
 		for(Deal deal : dealList)
 		{
 			boolean endsAfter = false;
+			
 			//deal ends after or when this order was created or has no end date
 			if(deal.getEndDate() == null) endsAfter = true;
 			else if(order.getDate().isBefore(deal.getEndDate()) || order.getDate().isEqual(deal.getEndDate())) endsAfter = true;
@@ -109,17 +116,11 @@ public class ItemController
 					if(deal.getProduct().getId() == item.getProduct().getId())
 					{
 						//set the items discount and return true
-						if(deal.getDiscount() > currBest) currBest = deal.getDiscount();
+						item.setDiscount(deal.getDiscount());
+						return true;
 					}
 				}
 			}
-		}
-		
-		//if a deal was found, add it to the item and return true
-		if(currBest > 0)
-		{
-			item.setDiscount(currBest);
-			return true;
 		}
 		
 		//no deal for this order item
@@ -127,21 +128,19 @@ public class ItemController
 	}
 	
 	@RequestMapping(value = "/add", method = RequestMethod.POST)
-	public String itemAdd(@ModelAttribute(value="itemFormDto")ItemFormDto itemFormDto,
+	public String itemAdd(@Valid @ModelAttribute(value="itemFormDto")ItemFormDto itemFormDto,
 			BindingResult bindingResult,
 			@RequestParam String action,
 			Model model)
 	{
+		System.out.println("Made it");
 		//chose submit, not cancel
 		if(action.equals("Submit"))
 		{
 			//only care about validating if they chose submit. Valid input doesn't matter if they're cancelling anyway
 			//either amount is non numerical or none is selected from product list
-			if(bindingResult.hasErrors() || itemFormDto.getProductId() < 0)
+			if(bindingResult.hasErrors())
 			{
-				//sometimes selecting none from the product drop down sets the id to 0 (bananas)
-				//don't know that there's much I can do about it from these 3 classes
-				//CHANGEME?
 				itemFormDto.setProductList(EMarketApp.getStore().getProductList());
 				model.addAttribute("itemFormDto", itemFormDto);
 				return "form/itemDetail";
