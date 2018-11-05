@@ -19,9 +19,9 @@ public class ItemValidator implements Validator {
 		ValidationUtils.rejectIfEmptyOrWhitespace(errors, "productId", "", "Field cannot be empty.");
 		ValidationUtils.rejectIfEmptyOrWhitespace(errors, "amount", "", "Field cannot be empty.");
 		
-		if(dto.getAmount() < 0)
+		if(dto.getAmount() <= 0)
 		{
-			errors.rejectValue("amount", "", "Amount must be positive");
+			errors.rejectValue("amount", "", "Amount must be a positive integer");
 		}
 		
 		if(dto.getProductId() < 0)

@@ -133,7 +133,6 @@ public class ItemController
 			@RequestParam String action,
 			Model model)
 	{
-		System.out.println("Made it");
 		//chose submit, not cancel
 		if(action.equals("Submit"))
 		{
